@@ -1,10 +1,10 @@
 import time
+import json  # JSON 페이로드 파싱을 위해 추가
 from paho.mqtt import client as mqtt_client
-# 최신 2.x 버전에 필요한 API 버전 선언용 모듈 추가
 from paho.mqtt.enums import CallbackAPIVersion
 
 # --- 설정 정보 ---
-BROKER = 'localhost'  # 젯슨 자체를 브로커로 쓸 경우 localhost, 다르면 브로커 IP 입력
+BROKER = 'localhost'  
 PORT = 1883
 CLIENT_ID = 'jetson_mqtt_tester'
 
@@ -12,7 +12,6 @@ CLIENT_ID = 'jetson_mqtt_tester'
 TOPIC_TEMP = "shellyhtg3-80b54e358c18/status/temperature:0"
 TOPIC_HUMI = "shellyhtg3-80b54e358c18/status/humidity:0"
 
-# [수정] 최신 2.x 버전에 맞게 매개변수(client, userdata, flags, rc, properties) 추가
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
         print("[성공] MQTT 브로커에 연결되었습니다!")
@@ -23,20 +22,37 @@ def on_connect(client, userdata, flags, rc, properties=None):
     else:
         print(f"[실패] 브로커 연결 실패, 에러 코드: {rc}")
 
-# 메시지를 받았을 때 실행되는 함수
+# [수정] 수신된 JSON 페이로드를 파싱하여 깔끔하게 정리 출력하는 함수
 def on_message(client, userdata, msg):
     topic = msg.topic
-    payload = msg.payload.decode('utf-8')
+    raw_payload = msg.payload.decode('utf-8')
     
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 수신 데이터 발생!")
-    if "temperature" in topic:
-        print(f" 🌡️ 온도 토픽 데이터: {payload}")
-    elif "humidity" in topic:
-        print(f" 💧 습도 토픽 데이터: {payload}")
-    print("-" * 40)
+    try:
+        # 문자열 형태의 JSON을 파이크 딕셔너리로 변환
+        data = json.loads(raw_payload)
+        current_time = time.strftime('%Y-%m-%d %H:%M:%S')
+        
+        if "temperature" in topic:
+            # 쉘리 온도 데이터 구조 예시: {"id": 0, "tC": 23.5, "tF": 74.3}
+            temp_c = data.get("tC")
+            if temp_c is not None:
+                print(f"[{current_time}] 🌡️ 현재 온도: {temp_c} °C")
+                print("-" * 40)
+                
+        elif "humidity" in topic:
+            # 쉘리 습도 데이터 구조 예시: {"id": 0, "rh": 45.2}
+            humidity = data.get("rh")
+            if humidity is not None:
+                print(f"[{current_time}] 💧 현재 습도: {humidity} %")
+                print("-" * 40)
+                
+    except json.JSONDecodeError:
+        # JSON 포맷이 아니거나 깨진 데이터가 올 경우 예외 처리
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 수신 데이터 파싱 실패 (JSON 아님)")
+        print(f" 원본 데이터: {raw_payload}")
+        print("-" * 40)
 
 def run():
-    # [수정] Client 생성 시 CallbackAPIVersion.VERSION2를 반드시 명시해야 합니다.
     client = mqtt_client.Client(CallbackAPIVersion.VERSION2, CLIENT_ID)
     client.on_connect = on_connect
     client.on_message = on_message
